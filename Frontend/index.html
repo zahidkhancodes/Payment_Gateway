@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment Gateway</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: #f3f4f6;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        color: #1f2937;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        padding: 40px;
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+      }
+      .card h1 {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #111827;
+      }
+      .card p {
+        margin-bottom: 24px;
+        color: #6b7280;
+        font-size: 15px;
+      }
+      .amount-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 24px;
+        background-color: #f9fafb;
+        padding: 16px;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+      }
+      .amount-container label {
+        font-weight: 500;
+        color: #4b5563;
+        margin-right: 12px;
+      }
+      .amount-container input {
+        width: 100px;
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 18px;
+        font-weight: 600;
+        text-align: center;
+        color: #111827;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .amount-container input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+      .pay-btn {
+        background-color: #2563eb;
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 14px 24px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        width: 100%;
+        transition: background-color 0.2s;
+      }
+      .pay-btn:hover {
+        background-color: #1d4ed8;
+      }
+      .status {
+        margin-top: 20px;
+        padding: 12px;
+        border-radius: 6px;
+        font-weight: 500;
+        display: none;
+      }
+      .status.success {
+        display: block;
+        background-color: #d1fae5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+      }
+      .status.failed {
+        display: block;
+        background-color: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Payment Gateway</h1>
+      <p>Complete your payment securely</p>
+      
+      <div class="amount-container">
+        <label for="amountInput">Amount (₹)</label>
+        <input type="number" id="amountInput" min="1" value="1" />
+      </div>
+      
+      <button class="pay-btn" onclick="payNow()">Pay Now</button>
+      <div class="status" id="status"></div>
+    </div>
+
+    <script>
+      async function payNow() {
+        const amountInput = document.getElementById("amountInput").value;
+        const amount = parseInt(amountInput);
+
+        if (isNaN(amount) || amount <= 0) {
+            alert("Please enter a valid amount.");
+            return;
+        }
+
+        try {
+            const res = await fetch("http://localhost:3000/create-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: amount }),
+            });
+
+            if (!res.ok) throw new Error("Failed to create order");
+
+            const data = await res.json();
+            const order = data.order;
+
+            const options = {
+            key: "rzp_test_SpgGu65LMxKVsx",
+            amount: order.amount,
+            currency: "INR",
+            name: "Payment Gateway",
+            description: "Test Payment",
+            order_id: order.id,
+
+            handler: async function (response) {
+                try {
+                    const verifyRes = await fetch("http://localhost:3000/verify-payment", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                        razorpay_order_id: response.razorpay_order_id,
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_signature: response.razorpay_signature,
+                        amount: amount,
+                        }),
+                    });
+
+                    const statusDiv = document.getElementById("status");
+                    if (verifyRes.ok) {
+                        statusDiv.textContent = "Payment Successful!";
+                        statusDiv.className = "status success";
+                    } else {
+                        statusDiv.textContent = "Payment Failed!";
+                        statusDiv.className = "status failed";
+                    }
+                } catch (error) {
+                    console.error("Verification error:", error);
+                    const statusDiv = document.getElementById("status");
+                    statusDiv.textContent = "Payment Failed!";
+                    statusDiv.className = "status failed";
+                }
+            },
+            };
+
+            const rzp = new Razorpay(options);
+            rzp.on('payment.failed', function (response){
+                const statusDiv = document.getElementById("status");
+                statusDiv.textContent = "Payment Failed!";
+                statusDiv.className = "status failed";
+            });
+            rzp.open();
+        } catch (error) {
+            console.error("Payment initialization error:", error);
+            alert("Could not initialize payment. Please try again later.");
+        }
+      }
+    </script>
+  </body>
+</html>
